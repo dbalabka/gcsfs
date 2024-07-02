@@ -88,9 +88,11 @@ class GoogleCredentials:
             raise ValueError(msg.format(self.project, project))
         self.project = project
         self.credentials = credentials
+        self.method = 'google_default'
 
     def _connect_cloud(self):
         self.credentials = gauth.compute_engine.Credentials()
+        self.method = 'cloud'
         try:
             with requests.Session() as session:
                 req = Request(session)
@@ -107,6 +109,7 @@ class GoogleCredentials:
         if (project, access) in self.tokens:
             credentials = self.tokens[(project, access)]
             self.credentials = credentials
+            self.method = 'cache'
 
     def _dict_to_credentials(self, token):
         """
@@ -164,12 +167,13 @@ class GoogleCredentials:
         else:
             raise ValueError("Token format not understood")
         self.credentials = credentials
+        self.method = 'token'
         if self.credentials.valid:
             self.credentials.apply(self.heads)
 
     def maybe_refresh(self):
         # this uses requests and is blocking
-        if self.credentials is None:
+        if self.method == 'anon':
             return  # anon
         if self.credentials.valid:
             return  # still good
@@ -194,9 +198,11 @@ class GoogleCredentials:
             fn, scopes=[self.scope]
         )
         self.credentials = credentials
+        self.method = 'service'
 
     def _connect_anon(self):
         self.credentials = None
+        self.method = 'anon'
 
     def _connect_browser(self):
         flow = InstalledAppFlow.from_client_config(client_config, [self.scope])
@@ -204,6 +210,7 @@ class GoogleCredentials:
         self.tokens[(self.project, self.access)] = credentials
         self._save_tokens()
         self.credentials = credentials
+        self.method = "browser"
 
     def connect(self, method=None):
         """
@@ -240,11 +247,10 @@ class GoogleCredentials:
                     )
                     # Reset credentials if they were set but the authentication failed
                     # (reverts to 'anon' behavior)
-                    self.credentials = None
+                    self._connect_anon()
             else:
                 # Since the 'anon' connection method should always succeed,
                 # getting here means something has gone terribly wrong.
                 raise RuntimeError("All connection methods have failed!")
         else:
             self.__getattribute__("_connect_" + method)()
-            self.method = method
